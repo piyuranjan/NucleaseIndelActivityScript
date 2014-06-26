@@ -50,11 +50,13 @@ sub Usage
 Usage:\n$0 [options: provide all flags separately]
 \nPackage requirements (in PATH):\nPrinseq-Lite(prinseq-lite.pl); TrimGalore(trim_galore); FLASH(flash); Burrows-Wheeler Aligner(bwa); Samtools(samtools)
 \nOptions:
- -d|dataDir	provide directory path with paired end read files
-			This option assumes paired end files to be ordered
+ -c|config	[string:required] Provide config file (with location)
+			(pwd assumed as location if not given)
+ -d|dataDir	[string] provide directory path with paired end read files
+			#remove:This option assumes paired end files to be ordered
 			next to each other.
 			Default: pwd
- -w|workDir	provide path to create all intermediate/result files
+ -w|workDir	[string] provide path to create all intermediate/result files
 			Default: pwd/IndelAnalysis
  -dW|delWorkDir	Delete previous workDir if exists (has same name)
 			Default: off (Quit with error)
@@ -65,18 +67,21 @@ Usage:\n$0 [options: provide all flags separately]
 #Steps; Usage;
 #print GetLoggingTime();
 
-my ($dataDir,$workDir,$delWorkDir);
+my ($configFile,$dataDir,$workDir,$delWorkDir);
 my ($help)=(0) x 1; #all 0 valued scalars
-if(!GetOptions('d|dataDir=s' => \$dataDir,
+if(!GetOptions('c|config=s' => \$configFile,
+				'd|dataDir=s' => \$dataDir,
 				'w|workDir=s' => \$workDir,
 				'dW|delWorkDir' => \$delWorkDir,
 				'h|help' => \$help)
-				||(!defined $dataDir))
+				||(!defined $configFile))
 	{Usage; exit 1;}
 
-my %pairedFqFiles=%{ScanSeqFiles($dataDir)};
-foreach my $key(nsort keys %pairedFqFiles)
-	{print "$key\t$pairedFqFiles{$key}\n";}
+##Deprecated: Scan fastq files on a location
+# my %pairedFqFiles=%{ScanSeqFiles($dataDir)};
+# foreach my $key(nsort keys %pairedFqFiles)
+	# {print "$key\t$pairedFqFiles{$key}\n";}
+
 ##Write later: Input method by a config file
 
 #####################################
@@ -90,12 +95,14 @@ sub GetLoggingTime #find and return current logging timestamp
 	return $niceTimestamp;
 	}
 
+## ScanSeqFiles deprecated now
 sub ScanSeqFiles #Scan and guess paired end files from a given location
 	{
 	my $dataDir=$_[0]; #record path for data files
 	my %pairedFqFiles; #will record key->value as pair1File->pair2File
 	opendir(DIR,$dataDir) or die $!;
 	my @seqFiles=nsort(readdir(DIR)); #sorted aphanumerically
+	closedir(DIR);
 	my @fqFiles;
 	foreach my $seqFile(@seqFiles)
 		{
@@ -109,4 +116,15 @@ sub ScanSeqFiles #Scan and guess paired end files from a given location
 		$pairedFqFiles{$fqFiles[$i]}=$fqFiles[$i+1];
 		}
 	return \%pairedFqFiles;
+	}
+
+sub ScanParametersFromConfig #Scans the configuration file for all the parameters and returns a hash with all parameter values
+	{
+	my $configFile=$_[0];
+	die "Error: Config file empty." if(-z $configFile); 
+	open(CONF,$configFile) or die $!;
+	while(<CONF>)
+		{
+		
+		}
 	}
