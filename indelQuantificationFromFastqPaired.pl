@@ -48,13 +48,14 @@ sub Usage
 	{
 	print "
 Usage:\n$0 [options: provide all flags separately]
-\nPackage requirements (in PATH):\nPrinseq-Lite(prinseq-lite.pl); TrimGalore(trim_galore); FLASH(flash); Burrows-Wheeler Aligner(bwa); Samtools(samtools)
+\nPackage requirements (in system PATH variable):\nPrinseq-Lite(prinseq-lite.pl); TrimGalore(trim_galore); FLASH(flash); Burrows-Wheeler Aligner(bwa); Samtools(samtools)
 \nOptions:
- -c|config	[string:required] Provide config file (with location)
+ -c|config	[string:required] provide config file (with location)
 			(pwd assumed as location if not given)
- -d|dataDir	[string] provide directory path with paired end read files
-			#remove:This option assumes paired end files to be ordered
-			next to each other.
+ -d|dataDir	[string:required] provide directory path which contains paired end read files,
+			Reference sequence file(s) and tab-delimited Amplicon cut-site files.
+			Program will find the filenames specified in the config, in the
+			complete directory tree under given path.
 			Default: pwd
  -w|workDir	[string] provide path to create all intermediate/result files
 			Default: pwd/IndelAnalysis
@@ -67,14 +68,14 @@ Usage:\n$0 [options: provide all flags separately]
 #Steps; Usage;
 #print GetLoggingTime();
 
-my ($configFile,$dataDir,$workDir,$delWorkDir);
-my ($help)=(0) x 1; #all 0 valued scalars
+my ($configFile,$dataDir,$workDir);
+my ($delWorkDir,$help)=(0) x 2; #all 0 valued scalars
 if(!GetOptions('c|config=s' => \$configFile,
 				'd|dataDir=s' => \$dataDir,
 				'w|workDir=s' => \$workDir,
 				'dW|delWorkDir' => \$delWorkDir,
 				'h|help' => \$help)
-				||(!defined $configFile))
+				||(!defined $configFile)||(!defined $dataDir))
 	{Usage; exit 1;}
 
 ##Deprecated: Scan fastq files on a location
@@ -121,10 +122,26 @@ sub ScanSeqFiles #Scan and guess paired end files from a given location
 sub ScanParametersFromConfig #Scans the configuration file for all the parameters and returns a hash with all parameter values
 	{
 	my $configFile=$_[0];
+	my $dataDir=$_[1]; #directory to find all files provided in configFile
 	die "Error: Config file empty." if(-z $configFile); 
+	my @paramOrder; #array to store order of the values
+	my %paramLabels=qw(ReadPair1 0 ReadPair2 0 AvgReadLength 0 MinAmpliconLength 0 ForwardAdapter 0 ReverseAdapter 0 ReferenceSeqFile 0 AmpliconCutSites 0); #hash to store/confirm all labels
 	open(CONF,$configFile) or die $!;
 	while(<CONF>)
 		{
+		next if(/(#|^$)/); #skip any comments/blank lines
+		chomp();
+		if(/^LABELS:/) #scan and confirm integrity of all labels and their order
+			{
+			@paramOrder=split(/\t/,$_);
+			shift(@paramOrder); #remove LABELS: tag from param array
+			die "Error: All parameter labels not present\n" if($#paramOrder<7);
+			foreach my $param(@paramOrder) #confirm all parameter names
+				{die "Error: parameter mismatch: no parameter matches label \"$param\" in configFile: $configFile at line $.\n" unless(defined $paramLabels{$param});}
+			next;
+			}
+		my @paramValues=split(/\t/,$_);
+		die "Error: All parameter values not present for entry at line $. in $configFile" if($#paramValues<7); #integrity check for all values in configFile
 		
 		}
 	}
