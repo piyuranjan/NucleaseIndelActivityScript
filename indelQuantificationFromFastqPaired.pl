@@ -68,7 +68,8 @@ Usage:\n$0 [options: provide all flags separately]
 #Steps; Usage;
 #print GetLoggingTime();
 
-my ($configFile,$dataDir,$workDir);
+my ($configFile,$workDir);
+our ($dataDir);
 my ($delWorkDir,$help)=(0) x 2; #all 0 valued scalars
 if(!GetOptions('c|config=s' => \$configFile,
 				'd|dataDir=s' => \$dataDir,
@@ -83,7 +84,7 @@ if(!GetOptions('c|config=s' => \$configFile,
 # foreach my $key(nsort keys %pairedFqFiles)
 	# {print "$key\t$pairedFqFiles{$key}\n";}
 
-##Write later: Input method by a config file
+ScanParametersFromConfig($configFile);
 
 #####################################
 ######### Subroutines Below #########
@@ -122,26 +123,57 @@ sub ScanSeqFiles #Scan and guess paired end files from a given location
 sub ScanParametersFromConfig #Scans the configuration file for all the parameters and returns a hash with all parameter values
 	{
 	my $configFile=$_[0];
-	my $dataDir=$_[1]; #directory to find all files provided in configFile
-	die "Error: Config file empty." if(-z $configFile); 
+	die "\nError: Config file empty." if(-z $configFile); 
+	my @entryParameters;
 	my @paramOrder; #array to store order of the values
-	my %paramLabels=qw(ReadPair1 0 ReadPair2 0 AvgReadLength 0 MinAmpliconLength 0 ForwardAdapter 0 ReverseAdapter 0 ReferenceSeqFile 0 AmpliconCutSites 0); #hash to store/confirm all labels
+	my %paramLabels=qw(ReadPair1 0 ReadPair2 0 AvgReadLength 0 MinAmpliconLength 0 ForwardAdapter 0 ReverseAdapter 0 ReferenceSeqFile 0 AmpliconCutSites 0); #hash to confirm all labels and store their location
 	open(CONF,$configFile) or die $!;
+	my $entryCounter=0;
 	while(<CONF>)
 		{
 		next if(/(#|^$)/); #skip any comments/blank lines
 		chomp();
-		if(/^LABELS:/) #scan and confirm integrity of all labels and their order
+		if(/^LABELS:/) #scan, confirm integrity, store location of all labels
 			{
 			@paramOrder=split(/\t/,$_);
-			shift(@paramOrder); #remove LABELS: tag from param array
-			die "Error: All parameter labels not present\n" if($#paramOrder<7);
-			foreach my $param(@paramOrder) #confirm all parameter names
-				{die "Error: parameter mismatch: no parameter matches label \"$param\" in configFile: $configFile at line $.\n" unless(defined $paramLabels{$param});}
+			shift(@paramOrder); #remove "LABELS:" tag from param array
+			die "\nError: All parameter labels not present in configFile: $configFile at line $.\n" if($#paramOrder<7); #integrity check
+			for(my $param=0;$param<=$#paramOrder;$param++)
+				{
+				if(defined $paramLabels{$paramOrder[$param]}) #if name matches, store location
+					{$paramLabels{$paramOrder[$param]}=$param;}
+				else
+					{die "\nError: parameter mismatch: no parameter matches label \"$paramOrder[$param]\" in configFile: $configFile at line $.\n";}
+				}
 			next;
 			}
 		my @paramValues=split(/\t/,$_);
-		die "Error: All parameter values not present for entry at line $. in $configFile" if($#paramValues<7); #integrity check for all values in configFile
+		# foreach my $val(@paramValues)
+			# {print "!$val\n";}
+		# print "\n@paramValues\n$#paramValues";
+		# print scalar @paramValues;
+		die "\nError: All parameter values not present for entry at line $. in configFile: $configFile\n" if($#paramValues<7); #integrity check for all values in configFile
+		#scan values and complete file paths
+		my $readPair1=FindFilePath($paramValues[$paramLabels{ReadPair1}]);
+		#print "\n!$readPair1";
+		${$entryParameters[$entryCounter]}{ReadPair1}=$readPair1;
 		
+		$entryCounter++;
 		}
+	}
+
+sub FindFilePath #looks for complete path of a file in dataDir
+	{
+	my $fileName=$_[0];
+	my $command=`find $dataDir -name $fileName`;
+	my @results=split(/\n/,$command);
+	if($#results>0)
+		{
+		warn "\nWarning: More than one file found by name: $fileName in $dataDir\n";
+		foreach my $result(@results)
+			{warn "$result\n";}
+		warn "\nOnly $results[0] will be used for processing\n";
+		}
+	#print "$results[0]\n";
+	return $results[0];
 	}
