@@ -19,6 +19,7 @@ use strict;
 use warnings;
 use Getopt::Long;
 use Time::HiRes qw(gettimeofday tv_interval);
+use Cwd;
 use Sort::Naturally;
 
 ##All function definitions
@@ -52,15 +53,15 @@ Usage:\n$0 [options: provide all flags separately]
 \nOptions:
  -c|config	[string:required] provide config file (with location)
 			(pwd assumed as location if not given)
- -d|dataDir	[string:required] provide directory path which contains paired end read files,
+ -d|dataDir	[string] provide directory path which contains paired-end Read files,
 			Reference sequence file(s) and tab-delimited Amplicon cut-site files.
 			Program will find the filenames specified in the config, in the
 			complete directory tree under given path.
 			Default: pwd
  -w|workDir	[string] provide path to create all intermediate/result files
-			Default: pwd/IndelAnalysis
- -dW|delWorkDir	Delete previous workDir if exists (has same name)
-			Default: off (Quit with error)
+			result files will be created in path/IndelAnalysis.\$timestamp
+			Default: pwd
+ -v|verbose	Print all logging steps (on STDOUT)
  -h|help	Print detailed help with steps involved
 	\n";
 	}
@@ -68,16 +69,25 @@ Usage:\n$0 [options: provide all flags separately]
 #Steps; Usage;
 #print GetLoggingTime();
 
-my ($configFile,$workDir);
-our ($dataDir);
-my ($delWorkDir,$help)=(0) x 2; #all 0 valued scalars
+our @entryParameters; #this hash stores all the parameters given in config file
+my ($configFile); #all undef vars
+my $pwd=cwd();
+our ($dataDir,$workDir)=($pwd) x 2; #default for dataDir and workDir
+my ($help,$verbose)=(0) x 2; #all 0 valued scalars
 if(!GetOptions('c|config=s' => \$configFile,
 				'd|dataDir=s' => \$dataDir,
 				'w|workDir=s' => \$workDir,
-				'dW|delWorkDir' => \$delWorkDir,
+				'v|verbose' => \$verbose,
 				'h|help' => \$help)
-				||(!defined $configFile)||(!defined $dataDir))
+				||(!defined $configFile))
 	{Usage; exit 1;}
+$dataDir=~s/\/$//; #remove trailing slash if present
+die "$dataDir: Directory absent / not readable\n" unless((-d $dataDir)&&(-r $dataDir));
+$workDir=~s/\/$//; #remove trailing slash if present
+$workDir.='/IndelAnalysis.'.GetLoggingTime(); #default for workDir
+
+###display all configuration options###
+
 
 ##Deprecated: Scan fastq files on a location
 # my %pairedFqFiles=%{ScanSeqFiles($dataDir)};
@@ -86,6 +96,7 @@ if(!GetOptions('c|config=s' => \$configFile,
 
 ScanParametersFromConfig($configFile);
 
+
 #####################################
 ######### Subroutines Below #########
 #####################################
@@ -93,7 +104,7 @@ ScanParametersFromConfig($configFile);
 sub GetLoggingTime #find and return current logging timestamp
 	{
 	my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
-	my $niceTimestamp = sprintf ( "%04d%02d%02d %02d:%02d:%02d",$year+1900,$mon+1,$mday,$hour,$min,$sec);
+	my $niceTimestamp = sprintf ( "%04d%02d%02d-%02d%02d%02d",$year+1900,$mon+1,$mday,$hour,$min,$sec);
 	return $niceTimestamp;
 	}
 
@@ -123,11 +134,10 @@ sub ScanSeqFiles #Scan and guess paired end files from a given location
 sub ScanParametersFromConfig #Scans the configuration file for all the parameters and returns a hash with all parameter values
 	{
 	my $configFile=$_[0];
-	die "\nError: Config file empty." if(-z $configFile); 
-	my @entryParameters;
+	die "\nError: Config file empty." if(-z $configFile);
 	my @paramOrder; #array to store order of the values
 	my %paramLabels=qw(ReadPair1 0 ReadPair2 0 AvgReadLength 0 MinAmpliconLength 0 ForwardAdapter 0 ReverseAdapter 0 ReferenceSeqFile 0 AmpliconCutSites 0); #hash to confirm all labels and store their location
-	open(CONF,$configFile) or die $!;
+	open(CONF,$configFile) or die "$configFile: $!\n";
 	my $entryCounter=0;
 	while(<CONF>)
 		{
@@ -155,9 +165,18 @@ sub ScanParametersFromConfig #Scans the configuration file for all the parameter
 		die "\nError: All parameter values not present for entry at line $. in configFile: $configFile\n" if($#paramValues<7); #integrity check for all values in configFile
 		#scan values and complete file paths
 		my $readPair1=FindFilePath($paramValues[$paramLabels{ReadPair1}]);
-		#print "\n!$readPair1";
 		${$entryParameters[$entryCounter]}{ReadPair1}=$readPair1;
-		
+		my $readPair2=FindFilePath($paramValues[$paramLabels{ReadPair2}]);
+		${$entryParameters[$entryCounter]}{ReadPair2}=$readPair2;
+		my $referenceSeqFile=FindFilePath($paramValues[$paramLabels{ReferenceSeqFile}]);
+		${$entryParameters[$entryCounter]}{ReferenceSeqFile}=$referenceSeqFile;
+		my $ampliconCutSites=FindFilePath($paramValues[$paramLabels{AmpliconCutSites}]);
+		${$entryParameters[$entryCounter]}{AmpliconCutSites}=$ampliconCutSites;
+		#scan parameters
+		${$entryParameters[$entryCounter]}{AvgReadLength}=$paramValues[$paramLabels{AvgReadLength}];
+		${$entryParameters[$entryCounter]}{MinAmpliconLength}=$paramValues[$paramLabels{MinAmpliconLength}];
+		${$entryParameters[$entryCounter]}{ForwardAdapter}=$paramValues[$paramLabels{ForwardAdapter}];
+		${$entryParameters[$entryCounter]}{ReverseAdapter}=$paramValues[$paramLabels{ReverseAdapter}];
 		$entryCounter++;
 		}
 	}
