@@ -12,7 +12,7 @@
 #
 # Author: Piyush Ranjan (piyuranjan@gatech.edu)
 # Date created: May 08, 2014
-# Last updated: ************
+# Last updated: Check on https://github.com/piyuranjan/NucleaseIndelActivityScript
 ################################################################################
 
 use strict;
@@ -22,7 +22,7 @@ use Time::HiRes qw(gettimeofday tv_interval);
 use Cwd;
 use Sort::Naturally;
 
-##All function definitions
+##All function definitions (for previous perl versions, prior to v5.10)
 #sub GetLoggingTime;
 
 sub Steps
@@ -41,7 +41,7 @@ sub Steps
 #
 # Author: Piyush Ranjan (piyuranjan@gatech.edu)
 # Date created: May 08, 2014
-# Last updated: ************
+# Last updated: Check on https://github.com/piyuranjan/NucleaseIndelActivityScript
 ################################################################################
 	';
 	}
@@ -62,25 +62,27 @@ Usage:\n$0 [options: provide all flags separately]
 			result files will be created in path/IndelAnalysis.\$timestamp
 			Default: pwd
  -v|verbose	Print all logging steps (on STDOUT)
+ -debug		Turn on Debug mode with multiple logging values. Turn this on only
+			if you are the developer/contributor to the program.
  -h|help	Print detailed help with steps involved
 	\n";
 	}
-
-#Steps; Usage;
-#print GetLoggingTime();
 
 our @entryParameters; #this hash stores all the parameters given in config file
 my ($configFile); #all undef vars
 my $pwd=cwd();
 our ($dataDir,$workDir)=($pwd) x 2; #default for dataDir and workDir
-my ($help,$verbose)=(0) x 2; #all 0 valued scalars
+my ($help,$verbose,$debug)=(0) x 3; #all 0 valued scalars
 if(!GetOptions('c|config=s' => \$configFile,
 				'd|dataDir=s' => \$dataDir,
 				'w|workDir=s' => \$workDir,
 				'v|verbose' => \$verbose,
+				'debug' => \$debug,
 				'h|help' => \$help)
 				||(!defined $configFile))
 	{Usage; exit 1;}
+print "\nTime before beginning: ".GetLoggingTime()."\n" if $verbose;
+print "\n...Debug mode on...\n" if $debug;
 $dataDir=~s/\/$//; #remove trailing slash if present
 die "$dataDir: Directory absent / not readable\n" unless((-d $dataDir)&&(-r $dataDir));
 $workDir=~s/\/$//; #remove trailing slash if present
@@ -92,9 +94,20 @@ $workDir.='/IndelAnalysis.'.GetLoggingTime(); #default for workDir
 ##Deprecated: Scan fastq files on a location
 # my %pairedFqFiles=%{ScanSeqFiles($dataDir)};
 # foreach my $key(nsort keys %pairedFqFiles)
-	# {print "$key\t$pairedFqFiles{$key}\n";}
+	# {print "$key\t$pairedFqFiles{$key}\n" if $debug;}
 
+###Scan all parameters from the configuration file###
 ScanParametersFromConfig($configFile);
+die "\nError: No valid entries in the config file: $configFile\n" if($#entryParameters<0); #record check
+mkdir $workDir; #creating work directory if all checks passed
+
+###Processing each entry in config for Indel quantification###
+foreach my $entry(0..$#entryParameters)
+	{
+	${$entryParameters[$entry]}{ReadPair1}=~/\/(\S+)?\.f.*q$/;
+	my $entryDir=$1;
+	print "$entryDir\n" if $debug;
+	}
 
 
 #####################################
@@ -121,7 +134,7 @@ sub ScanSeqFiles #Scan and guess paired end files from a given location
 		{
 		next unless(-f "$dataDir/$seqFile"); #skip any directory/hidden files
 		next unless($seqFile=~/\.f(ast)?q$/i); #skip files not with extension fastq/fq
-		#print $seqFile."\n";
+		#print $seqFile."\n" if $debug;
 		push(@fqFiles,$seqFile);
 		}
 	for(my $i=0;$i<=$#fqFiles;$i+=2)
@@ -159,13 +172,14 @@ sub ScanParametersFromConfig #Scans the configuration file for all the parameter
 			}
 		my @paramValues=split(/\t/,$_);
 		# foreach my $val(@paramValues)
-			# {print "!$val\n";}
-		# print "\n@paramValues\n$#paramValues";
-		# print scalar @paramValues;
+			# {print "!$val\n" if $debug;}
+		# print "\n@paramValues\n$#paramValues" if $debug;
+		# print scalar @paramValues if $debug;
 		die "\nError: All parameter values not present for entry at line $. in configFile: $configFile\n" if($#paramValues<7); #integrity check for all values in configFile
 		#scan values and complete file paths
 		my $readPair1=FindFilePath($paramValues[$paramLabels{ReadPair1}]);
 		${$entryParameters[$entryCounter]}{ReadPair1}=$readPair1;
+		print ${$entryParameters[$entryCounter]}{ReadPair1}."!!\n" if $debug;
 		my $readPair2=FindFilePath($paramValues[$paramLabels{ReadPair2}]);
 		${$entryParameters[$entryCounter]}{ReadPair2}=$readPair2;
 		my $referenceSeqFile=FindFilePath($paramValues[$paramLabels{ReferenceSeqFile}]);
@@ -185,6 +199,7 @@ sub FindFilePath #looks for complete path of a file in dataDir
 	{
 	my $fileName=$_[0];
 	my $command=`find $dataDir -name $fileName`;
+	print "xx$command\n" if $debug;
 	my @results=split(/\n/,$command);
 	if($#results>0)
 		{
@@ -193,6 +208,8 @@ sub FindFilePath #looks for complete path of a file in dataDir
 			{warn "$result\n";}
 		warn "\nOnly $results[0] will be used for processing\n";
 		}
-	#print "$results[0]\n";
+	elsif($#results<0)
+		{die "\nError: File: $fileName not found in directory tree under: $dataDir\n";}
+	#print "$results[0]\n" if $debug;
 	return $results[0];
 	}
