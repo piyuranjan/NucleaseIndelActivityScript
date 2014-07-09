@@ -109,7 +109,7 @@ foreach my $entry(0..$#entryParameters)
 	{
 	##create sub directories for each sample
 	my $fqFile=(split(/\//,${$entryParameters[$entry]}{ReadPair1}))[-1];
-	$fqFile=~/(\S+)\.f.*q/;
+	$fqFile=~/(\S+)\.f(ast)?q$/;
 	my $entryDir="$workDir/${$entryParameters[$entry]}{SampleName}";
 	#print "$entryDir\n" if $debug;
 	mkdir $entryDir or die $!;
@@ -121,7 +121,13 @@ foreach my $entry(0..$#entryParameters)
 	my @trimmedFiles=TrimReadsByLength($entry,$trimLength,$trimDir); #invoke function
 	#print "\nFiles generated: @trimmedFiles\n" if $debug;
 	
-	##
+	##quality control and adapter trimming
+	my $qualTrimDir=$entryDir."/2.highQualityReads";
+	mkdir $qualTrimDir or die $!;
+	my @qualTrimmedFiles=TrimReadsByQuality($entry,@trimmedFiles,$qualTrimDir);
+	#print "\nFiles generated: @qualTrimmedFiles\n" if $debug;
+	
+	
 	}
 
 
@@ -232,18 +238,43 @@ sub FindFilePath #looks for complete path of a file in dataDir
 
 sub TrimReadsByLength #Trims reads by a given length criteria using prinseq-lite
 	{
-	my $entryNumber=$_[0]; #this record number in the config file will be processed
+	my $entryCounter=$_[0]; #this record number in the config file will be processed
 	my $trimLength=$_[1]; #reads will be trimmed by this length from 3' end
 	my $outDir=$_[2]; #output files will be generated here
-	my $prinSeqOut=qx(prinseq-lite.pl -fastq ${$entryParameters[$entryNumber]}{ReadPair1} -fastq2 ${$entryParameters[$entryNumber]}{ReadPair2} -trim_right $trimLength -out_good $outDir/${$entryParameters[$entryNumber]}{SampleName} -out_bad null 2>&1); #command for trimming
+	my $prinSeqOut=`prinseq-lite.pl -fastq ${$entryParameters[$entryCounter]}{ReadPair1} -fastq2 ${$entryParameters[$entryCounter]}{ReadPair2} -trim_right $trimLength -out_good $outDir/${$entryParameters[$entryCounter]}{SampleName} -out_bad null 2>&1`; #command for trimming
 	#print "return code = ", $?, "\n" if $debug;
 	if($?) {die "$prinSeqOut\n$!";} #sanity check
-	print "\nTrimming using prinseq-lite by $trimLength NT from 3' for: ${$entryParameters[$entryNumber]}{SampleName}\n$prinSeqOut\nTrimming done...\n" if $verbose;
-	my @trimmedFiles=("$outDir/${$entryParameters[$entryNumber]}{SampleName}_1.fastq","$outDir/${$entryParameters[$entryNumber]}{SampleName}_2.fastq");
+	print "\nTrimming using prinseq-lite by $trimLength NT from 3' for: ${$entryParameters[$entryCounter]}{SampleName}\n$prinSeqOut\nTrimming done...\n" if $verbose;
+	my @trimmedFiles=("$outDir/${$entryParameters[$entryCounter]}{SampleName}_1.fastq","$outDir/${$entryParameters[$entryCounter]}{SampleName}_2.fastq");
 	if((-f $trimmedFiles[0])&&(-f $trimmedFiles[1]))
 		{return @trimmedFiles;} #return names of the files generated
 	else
 		{die "Files not formed: @trimmedFiles\nCheck if any error in prinseq-lite\n";} #integrity check
 	}
 
+sub TrimReadsByQuality #Trims reads from 3' end by phred score 20 and removes adapters using TrimGalore
+	{
+	my $entryCounter=$_[0]; #this record number in the config file will be processed
+	my $forFile=$_[1]; my $revFile=$_[2]; #sequences in these files will be trimmed from 3' end
+	my $outDir=$_[3]; #output files will be generated here
+	#print "\nentry:$entryCounter\nTrimmed Files: $forFile\t$revFile\noutDir:$outDir\n" if $debug;
+	#trim_galore -q 20 --paired -a AATGATACGGCGACCACCGAGATCTACACGTTCAGAGTTCTACAGTCCGACGATCA -a2 $revAdapter[$c] -o /data/home/pranjan6/NucleaseProject/10.ampliconSeqAnalysisEmory/3.analysisFromSeqData/2.qualTrim --fastqc_args "-f fastq" --retain_unpaired $readPair1 $readPair2
+	my $trimGaloreOut=`trim_galore -q 20 --paired -a ${$entryParameters[$entryCounter]}{ForwardAdapter} -a2 ${$entryParameters[$entryCounter]}{ReverseAdapter} -o $outDir --retain_unpaired $forFile $revFile 2>&1`; #command for quality trimming
+	print "return code = ", $?, "\n" if $debug;
+	if($?) {die "$trimGaloreOut\n$!";} #sanity check
+	print "\nQuality and adapter trimming using Trim_Galore by phred score 20 from 3' for: ${$entryParameters[$entryCounter]}{SampleName}\n$trimGaloreOut\nTrimming done...\n" if $verbose;
+	my @qualTrimmedFiles=($forFile,$revFile);
+	my $filePair=0;
+	foreach my $file(@qualTrimmedFiles) #getting names of the newer files generated to return
+		{
+		$filePair++;
+		$file=(split(/\//,$file))[-1];
+		$file=~/(\S+)\.f(ast)?q$/;
+		$file="$outDir/$1_val_$filePair.fq";
+		}
+	if((-f $qualTrimmedFiles[0])&&(-f $qualTrimmedFiles[1]))
+		{return @qualTrimmedFiles;} #return names of the files generated
+	else
+		{die "Files not formed: @qualTrimmedFiles\nCheck if any error in trim_galore\n";} #integrity check
+	}
 
