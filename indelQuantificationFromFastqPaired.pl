@@ -73,6 +73,7 @@ my ($configFile); #all undef vars
 my $pwd=cwd();
 our ($dataDir,$workDir)=($pwd) x 2; #default for dataDir and workDir
 my ($help,$verbose,$debug)=(0) x 3; #all 0 valued scalars
+#scan all command line options
 if(!GetOptions('c|config=s' => \$configFile,
 				'd|dataDir=s' => \$dataDir,
 				'w|workDir=s' => \$workDir,
@@ -81,8 +82,10 @@ if(!GetOptions('c|config=s' => \$configFile,
 				'h|help' => \$help)
 				||(!defined $configFile))
 	{Usage; exit 1;}
-print "\nTime before beginning: ".GetLoggingTime()."\n" if $verbose;
+if($help) #quit with help
+	{Steps;Usage;exit 0;}
 print "\n...Debug mode on...\n" if $debug;
+print "\nTime before beginning: ".GetLoggingTime()."\n" if ($verbose||$debug);
 $dataDir=~s/\/$//; #remove trailing slash if present
 die "$dataDir: Directory absent / not readable\n" unless((-d $dataDir)&&(-r $dataDir));
 $workDir=~s/\/$//; #remove trailing slash if present
@@ -99,14 +102,23 @@ $workDir.='/IndelAnalysis.'.GetLoggingTime(); #default for workDir
 ###Scan all parameters from the configuration file###
 ScanParametersFromConfig($configFile);
 die "\nError: No valid entries in the config file: $configFile\n" if($#entryParameters<0); #record check
-mkdir $workDir; #creating work directory if all checks passed
+mkdir $workDir or die $!; #creating work directory if all checks passed
 
 ###Processing each entry in config for Indel quantification###
 foreach my $entry(0..$#entryParameters)
 	{
-	${$entryParameters[$entry]}{ReadPair1}=~/\/(\S+)?\.f.*q$/;
-	my $entryDir=$1;
-	print "$entryDir\n" if $debug;
+	##create sub directories for each sample
+	my $fqFile=(split(/\//,${$entryParameters[$entry]}{ReadPair1}))[-1];
+	$fqFile=~/(\S+)\.f.*q/;
+	my $entryDir="$workDir/$1";
+	#print "$entryDir\n" if $debug;
+	mkdir $entryDir or die $!;
+	
+	##trimming reads by length=avgReadLength-minAmpliconSize
+	my $trimLength=${$entryParameters[$entry]}{AvgReadLength}-${$entryParameters[$entry]}{MinAmpliconLength};
+	my $trimDir=$entryDir."/1.trimmedReads";
+	mkdir $trimDir or die $!;
+	#invoke function
 	}
 
 
@@ -179,7 +191,7 @@ sub ScanParametersFromConfig #Scans the configuration file for all the parameter
 		#scan values and complete file paths
 		my $readPair1=FindFilePath($paramValues[$paramLabels{ReadPair1}]);
 		${$entryParameters[$entryCounter]}{ReadPair1}=$readPair1;
-		print ${$entryParameters[$entryCounter]}{ReadPair1}."!!\n" if $debug;
+		#print ${$entryParameters[$entryCounter]}{ReadPair1}."!!\n" if $debug;
 		my $readPair2=FindFilePath($paramValues[$paramLabels{ReadPair2}]);
 		${$entryParameters[$entryCounter]}{ReadPair2}=$readPair2;
 		my $referenceSeqFile=FindFilePath($paramValues[$paramLabels{ReferenceSeqFile}]);
@@ -199,7 +211,7 @@ sub FindFilePath #looks for complete path of a file in dataDir
 	{
 	my $fileName=$_[0];
 	my $command=`find $dataDir -name $fileName`;
-	print "xx$command\n" if $debug;
+	#print "xx$command\n" if $debug;
 	my @results=split(/\n/,$command);
 	if($#results>0)
 		{
@@ -213,3 +225,13 @@ sub FindFilePath #looks for complete path of a file in dataDir
 	#print "$results[0]\n" if $debug;
 	return $results[0];
 	}
+
+sub TrimReadsByLength #Trims reads by a given length criteria using prinseq-lite
+	{
+	my $outDir=$_[0]; #output files will be generated here
+	my $trimLength=$_[1]; #reads will be trimmed by this length from 3' end
+	my $entryNumber=$_[2]; #this record number in the config file will be processed
+	
+	}
+
+
