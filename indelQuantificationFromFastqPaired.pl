@@ -110,7 +110,7 @@ foreach my $entry(0..$#entryParameters)
 	##create sub directories for each sample
 	my $fqFile=(split(/\//,${$entryParameters[$entry]}{ReadPair1}))[-1];
 	$fqFile=~/(\S+)\.f.*q/;
-	my $entryDir="$workDir/$1";
+	my $entryDir="$workDir/${$entryParameters[$entry]}{SampleName}";
 	#print "$entryDir\n" if $debug;
 	mkdir $entryDir or die $!;
 	
@@ -118,7 +118,10 @@ foreach my $entry(0..$#entryParameters)
 	my $trimLength=${$entryParameters[$entry]}{AvgReadLength}-${$entryParameters[$entry]}{MinAmpliconLength};
 	my $trimDir=$entryDir."/1.trimmedReads";
 	mkdir $trimDir or die $!;
-	#invoke function
+	my @trimmedFiles=TrimReadsByLength($entry,$trimLength,$trimDir); #invoke function
+	#print "\nFiles generated: @trimmedFiles\n" if $debug;
+	
+	##
 	}
 
 
@@ -161,7 +164,7 @@ sub ScanParametersFromConfig #Scans the configuration file for all the parameter
 	my $configFile=$_[0];
 	die "\nError: Config file empty." if(-z $configFile);
 	my @paramOrder; #array to store order of the values
-	my %paramLabels=qw(ReadPair1 0 ReadPair2 0 AvgReadLength 0 MinAmpliconLength 0 ForwardAdapter 0 ReverseAdapter 0 ReferenceSeqFile 0 AmpliconCutSites 0); #hash to confirm all labels and store their location
+	my %paramLabels=qw(SampleName 0 ReadPair1 0 ReadPair2 0 AvgReadLength 0 MinAmpliconLength 0 ForwardAdapter 0 ReverseAdapter 0 ReferenceSeqFile 0 AmpliconCutSites 0); #hash to confirm all labels and store their location
 	open(CONF,$configFile) or die "$configFile: $!\n";
 	my $entryCounter=0;
 	while(<CONF>)
@@ -172,7 +175,7 @@ sub ScanParametersFromConfig #Scans the configuration file for all the parameter
 			{
 			@paramOrder=split(/\t/,$_);
 			shift(@paramOrder); #remove "LABELS:" tag from param array
-			die "\nError: All parameter labels not present in configFile: $configFile at line $.\n" if($#paramOrder<7); #integrity check
+			die "\nError: All parameter labels not present in configFile: $configFile at line $.\n" if($#paramOrder<8); #integrity check
 			for(my $param=0;$param<=$#paramOrder;$param++)
 				{
 				if(defined $paramLabels{$paramOrder[$param]}) #if name matches, store location
@@ -187,7 +190,7 @@ sub ScanParametersFromConfig #Scans the configuration file for all the parameter
 			# {print "!$val\n" if $debug;}
 		# print "\n@paramValues\n$#paramValues" if $debug;
 		# print scalar @paramValues if $debug;
-		die "\nError: All parameter values not present for entry at line $. in configFile: $configFile\n" if($#paramValues<7); #integrity check for all values in configFile
+		die "\nError: All parameter values not present for entry at line $. in configFile: $configFile\n" if($#paramValues<8); #integrity check for all values in configFile
 		#scan values and complete file paths
 		my $readPair1=FindFilePath($paramValues[$paramLabels{ReadPair1}]);
 		${$entryParameters[$entryCounter]}{ReadPair1}=$readPair1;
@@ -199,6 +202,7 @@ sub ScanParametersFromConfig #Scans the configuration file for all the parameter
 		my $ampliconCutSites=FindFilePath($paramValues[$paramLabels{AmpliconCutSites}]);
 		${$entryParameters[$entryCounter]}{AmpliconCutSites}=$ampliconCutSites;
 		#scan parameters
+		${$entryParameters[$entryCounter]}{SampleName}=$paramValues[$paramLabels{SampleName}];
 		${$entryParameters[$entryCounter]}{AvgReadLength}=$paramValues[$paramLabels{AvgReadLength}];
 		${$entryParameters[$entryCounter]}{MinAmpliconLength}=$paramValues[$paramLabels{MinAmpliconLength}];
 		${$entryParameters[$entryCounter]}{ForwardAdapter}=$paramValues[$paramLabels{ForwardAdapter}];
@@ -228,10 +232,18 @@ sub FindFilePath #looks for complete path of a file in dataDir
 
 sub TrimReadsByLength #Trims reads by a given length criteria using prinseq-lite
 	{
-	my $outDir=$_[0]; #output files will be generated here
+	my $entryNumber=$_[0]; #this record number in the config file will be processed
 	my $trimLength=$_[1]; #reads will be trimmed by this length from 3' end
-	my $entryNumber=$_[2]; #this record number in the config file will be processed
-	
+	my $outDir=$_[2]; #output files will be generated here
+	my $prinSeqOut=qx(prinseq-lite.pl -fastq ${$entryParameters[$entryNumber]}{ReadPair1} -fastq2 ${$entryParameters[$entryNumber]}{ReadPair2} -trim_right $trimLength -out_good $outDir/${$entryParameters[$entryNumber]}{SampleName} -out_bad null 2>&1); #command for trimming
+	#print "return code = ", $?, "\n" if $debug;
+	if($?) {die "$prinSeqOut\n$!";} #sanity check
+	print "\nTrimming using prinseq-lite by $trimLength NT from 3' for: ${$entryParameters[$entryNumber]}{SampleName}\n$prinSeqOut\nTrimming done...\n" if $verbose;
+	my @trimmedFiles=("$outDir/${$entryParameters[$entryNumber]}{SampleName}_1.fastq","$outDir/${$entryParameters[$entryNumber]}{SampleName}_2.fastq");
+	if((-f $trimmedFiles[0])&&(-f $trimmedFiles[1]))
+		{return @trimmedFiles;} #return names of the files generated
+	else
+		{die "Files not formed: @trimmedFiles\nCheck if any error in prinseq-lite\n";} #integrity check
 	}
 
 
