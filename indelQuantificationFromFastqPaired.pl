@@ -21,6 +21,7 @@ use Getopt::Long;
 use Time::HiRes qw(gettimeofday tv_interval);
 use Cwd;
 use Sort::Naturally;
+use List::MoreUtils qw(uniq);
 
 ##All function definitions (for previous perl versions, prior to v5.10)
 #sub GetLoggingTime;
@@ -104,9 +105,17 @@ ScanParametersFromConfig($configFile);
 die "\nError: No valid entries in the config file: $configFile\n" if($#entryParameters<0); #record check
 mkdir $workDir or die $!; #creating work directory if all checks passed
 
+###Create Indexes for BWA###
+my $indexDir="$workDir/ReferenceIndexes";
+mkdir $indexDir or die $!; #creating directory for all reference indexes for BWA
+CreateBWAIndex($indexDir);
+
+
 ###Processing each entry in config for Indel quantification###
 foreach my $entry(0..$#entryParameters)
 	{
+	print "\n","=" x 50 if($verbose||$debug);
+	print "\nProcessing ${$entryParameters[$entry]}{SampleName}\n" if($verbose||$debug);
 	##create sub directories for each sample
 	my $fqFile=(split(/\//,${$entryParameters[$entry]}{ReadPair1}))[-1];
 	$fqFile=~/(\S+)\.f(ast)?q$/;
@@ -127,7 +136,16 @@ foreach my $entry(0..$#entryParameters)
 	my @qualTrimmedFiles=TrimReadsByQuality($entry,@trimmedFiles,$qualTrimDir);
 	#print "\nFiles generated: @qualTrimmedFiles\n" if $debug;
 	
+	##merge read pairs to get longer reads
+	my $mergeDir=$entryDir."/3.mergedReads";
+	mkdir $mergeDir or die $!;
+	my $mergedFile=MergePairedReads($entry,@qualTrimmedFiles,$mergeDir);
 	
+	##create alignments of the reads to amplicon sequences
+	my $alignDir=$entryDir."4.readAlignment";
+	
+	print "\nProcessing for ${$entryParameters[$entry]}{SampleName} finished successfully\n" if($verbose||$debug);
+	print "=" x 50,"\n" if($verbose||$debug);
 	}
 
 
@@ -258,9 +276,8 @@ sub TrimReadsByQuality #Trims reads from 3' end by phred score 20 and removes ad
 	my $forFile=$_[1]; my $revFile=$_[2]; #sequences in these files will be trimmed from 3' end
 	my $outDir=$_[3]; #output files will be generated here
 	#print "\nentry:$entryCounter\nTrimmed Files: $forFile\t$revFile\noutDir:$outDir\n" if $debug;
-	#trim_galore -q 20 --paired -a AATGATACGGCGACCACCGAGATCTACACGTTCAGAGTTCTACAGTCCGACGATCA -a2 $revAdapter[$c] -o /data/home/pranjan6/NucleaseProject/10.ampliconSeqAnalysisEmory/3.analysisFromSeqData/2.qualTrim --fastqc_args "-f fastq" --retain_unpaired $readPair1 $readPair2
 	my $trimGaloreOut=`trim_galore -q 20 --paired -a ${$entryParameters[$entryCounter]}{ForwardAdapter} -a2 ${$entryParameters[$entryCounter]}{ReverseAdapter} -o $outDir --retain_unpaired $forFile $revFile 2>&1`; #command for quality trimming
-	print "return code = ", $?, "\n" if $debug;
+	#print "return code = ", $?, "\n" if $debug;
 	if($?) {die "$trimGaloreOut\n$!";} #sanity check
 	print "\nQuality and adapter trimming using Trim_Galore by phred score 20 from 3' for: ${$entryParameters[$entryCounter]}{SampleName}\n$trimGaloreOut\nTrimming done...\n" if $verbose;
 	my @qualTrimmedFiles=($forFile,$revFile);
@@ -278,3 +295,43 @@ sub TrimReadsByQuality #Trims reads from 3' end by phred score 20 and removes ad
 		{die "Files not formed: @qualTrimmedFiles\nCheck if any error in trim_galore\n";} #integrity check
 	}
 
+sub MergePairedReads #merges read pairs in to a single read using FLASH
+	{
+	my $entryCounter=$_[0]; #this record number in the config file will be processed
+	my $forFile=$_[1]; my $revFile=$_[2]; #sequences in these files will be trimmed from 3' end
+	my $outDir=$_[3]; #output files will be generated here
+	my $minOverlapToMerge=30; #this sets the min NT overlap to be matched for successful merging
+	#flash -m 30 -o Barcode-01 -d 3.mergedReads 2.highQualityReads/Barcode-01_1_val_1.fq 2.highQualityReads/Barcode-01_2_val_2.fq
+	my $mergeOut=`flash -m $minOverlapToMerge -o ${$entryParameters[$entryCounter]}{SampleName} -d $outDir $forFile $revFile 2>&1`; #command for merging read pairs
+	print "return code = ", $?, "\n" if $debug;
+	if($?) {die "$mergeOut\n$!";} #sanity check
+	print "\nMergining paired reads using FLASH with min overlap of $minOverlapToMerge NT for: ${$entryParameters[$entryCounter]}{SampleName}\n$mergeOut\nMerging done...\n" if $verbose;
+	my $mergedFile="$outDir/${$entryParameters[$entryCounter]}{SampleName}.extendedFrags.fastq";
+	if(-f $mergedFile)
+		{return $mergedFile;} #return name of the file generated
+	else
+		{die "Files not formed: $mergedFile\nCheck if any error in FLASH\n";} #integrity check
+	}
+
+sub CreateBWAIndex #creates indexes for the reference sequences provided and updates entry array with index prefix from sequence fileNames
+	{
+	my $indexDir=$_[0]; #location where indexes will be created
+	my @refSeqs;
+	foreach my $entryCounter(0..$#entryParameters)
+		{
+		push(@refSeqs,${$entryParameters[$entryCounter]}{ReferenceSeqFile}); #store refSeq fileName
+		my $refIndexPrefix=(split(/\//,${$entryParameters[$entryCounter]}{ReferenceSeqFile}))[-1];
+		$refIndexPrefix="$indexDir/$refIndexPrefix";
+		${$entryParameters[$entryCounter]}{ReferenceSeqFile}=$refIndexPrefix; #update RefSeqFile element with BWA index prefix to be used later during alignment
+		}
+	my @uniqRefSeqs=uniq(@refSeqs);
+	foreach my $uniqRefSeq(@uniqRefSeqs)
+		{
+		my $refIndexPrefix=(split(/\//,$uniqRefSeq))[-1];
+		$refIndexPrefix="$indexDir/$refIndexPrefix";
+		my $indexOut=`bwa index -p $refIndexPrefix -a is $uniqRefSeq 2>&1`; #command for making BWA index
+		print "return code = ", $?, "\n" if $debug;
+		if($?) {die "$indexOut\n$!";} #sanity check
+		print "\nPreparing BWA index for $uniqRefSeq\n$indexOut\nIndex Prepared...\n" if $verbose;
+		};
+	}

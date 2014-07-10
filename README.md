@@ -4,4 +4,4 @@ NucleaseIndelActivity
 Automation for the quantification of indels arising due to nuclease activity
 
 ###Desired components for future:
-* Import Fastq files using a config file
+* use a max thread option and update commands in BWA and FLASH, since they both use multiple threads.
