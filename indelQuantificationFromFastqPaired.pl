@@ -311,7 +311,7 @@ sub MergePairedReads #merges read pairs in to a single read using FLASH
 	if(-f $mergedFile)
 		{return $mergedFile;} #return name of the file generated
 	else
-		{die "Files not formed: $mergedFile\nCheck if any error in FLASH\n";} #integrity check
+		{die "File not formed: $mergedFile\nCheck if any error in FLASH\n";} #integrity check
 	}
 
 sub CreateBWAIndex #creates indexes for the reference sequences provided and updates entry array with index prefix from sequence fileNames
@@ -339,6 +339,7 @@ sub CreateBWAIndex #creates indexes for the reference sequences provided and upd
 
 sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, converts SAM->BAM and sorts BAM file
 	{
+	###Aligning reads to reference###
 	my $entryCounter=$_[0]; #this record number in the config file will be processed
 	my $readFile=$_[1]; #sequences in this file will be aligned to corresponding reference
 	my $outDir=$_[2]; #output files will be generated here
@@ -350,6 +351,7 @@ sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, conver
 	open(BWAERR,"$errFile") or die $!;
 	my @stderrOut=<BWAERR>; #record STDERR for BWA
 	close(BWAERR);
+	unlink $errFile;
 	if($?) {die "@stderrOut\n$!";} #sanity check
 	print "\nCreating alignment of reads on amplicon refs using BWA for ${$entryParameters[$entryCounter]}{SampleName}\n@stderrOut\nAlignment finished...\n" if $verbose;
 	
@@ -357,14 +359,24 @@ sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, conver
 	my $alignBamFile=$alignFile;
 	$alignBamFile=~s/\.sam$/.bam/;
 	#print "\nBAM file: $alignBamFile\n" if $debug;
-	#samtools view -bS Barcode-01.sam >Barcode-01.bam
-	`samtools view -bS $alignFile >$alignBamFile 2>$errFile`; #command to convert SAM to BAM
-	print "return code = ", $?, "\n" if $debug;
-	open(BWAERR,"$errFile") or die $!;
-	my @stderrOut=<BWAERR>; #record STDERR for samtools
-	close(BWAERR);
-	if($?) {die "@stderrOut\n$!";} #sanity check
-	print "\nConverting alignment from SAM to BAM for ${$entryParameters[$entryCounter]}{SampleName}\n@stderrOut\nConversion finished...\n" if $verbose;
+	#samtools view -bSh -o Barcode-01.bam Barcode-01.sam
+	my $samtoolsOut=`samtools view -bSh -o $alignBamFile $alignFile 2>&1`; #command to convert SAM to BAM
+	#print "return code = ", $?, "\n" if $debug;
+	if($?) {die "$samtoolsOut\n$!";} #sanity check
+	print "\nConverting alignment from SAM to BAM for ${$entryParameters[$entryCounter]}{SampleName}\n$samtoolsOut\nConversion finished...\n" if $verbose;
 	
-	#unlink $errFile;
+	###Sorting BAM###
+	my $alignSortedBamPrefix=$alignBamFile;
+	$alignSortedBamPrefix=~s/\.bam/.Sorted/;
+	#samtools sort Barcode-01.bam Barcode-01.Sorted
+	my $samtoolsOut=`samtools sort $alignBamFile $alignSortedBamPrefix 2>&1`; #command to sort BAM
+	print "return code = ", $?, "\n" if $debug;
+	if($?) {die "$samtoolsOut\n$!";} #sanity check
+	print "\nSorting alignment by chromosomal coordinates in BAM for ${$entryParameters[$entryCounter]}{SampleName}\n$samtoolsOut\nSorting finished...\n" if $verbose;
+	
+	my $alignSortedBamFile=$alignSortedBamPrefix.".bam";
+	if(-f $alignSortedBamFile)
+		{return $alignSortedBamFile;} #return name of the file generated
+	else
+		{die "File not formed: $alignSortedBamFile\nCheck if any error in BWA/Samtools\n";} #integrity check
 	}
