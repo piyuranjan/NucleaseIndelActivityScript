@@ -142,7 +142,9 @@ foreach my $entry(0..$#entryParameters)
 	my $mergedFile=MergePairedReads($entry,@qualTrimmedFiles,$mergeDir);
 	
 	##create alignments of the reads to amplicon sequences
-	my $alignDir=$entryDir."4.readAlignment";
+	my $alignDir=$entryDir."/4.readAlignment";
+	mkdir $alignDir or die $!;
+	my $alignFile=CreateBWAAlignment($entry,$mergedFile,$alignDir);
 	
 	print "\nProcessing for ${$entryParameters[$entry]}{SampleName} finished successfully\n" if($verbose||$debug);
 	print "=" x 50,"\n" if($verbose||$debug);
@@ -301,9 +303,8 @@ sub MergePairedReads #merges read pairs in to a single read using FLASH
 	my $forFile=$_[1]; my $revFile=$_[2]; #sequences in these files will be trimmed from 3' end
 	my $outDir=$_[3]; #output files will be generated here
 	my $minOverlapToMerge=30; #this sets the min NT overlap to be matched for successful merging
-	#flash -m 30 -o Barcode-01 -d 3.mergedReads 2.highQualityReads/Barcode-01_1_val_1.fq 2.highQualityReads/Barcode-01_2_val_2.fq
 	my $mergeOut=`flash -m $minOverlapToMerge -o ${$entryParameters[$entryCounter]}{SampleName} -d $outDir $forFile $revFile 2>&1`; #command for merging read pairs
-	print "return code = ", $?, "\n" if $debug;
+	#print "return code = ", $?, "\n" if $debug;
 	if($?) {die "$mergeOut\n$!";} #sanity check
 	print "\nMergining paired reads using FLASH with min overlap of $minOverlapToMerge NT for: ${$entryParameters[$entryCounter]}{SampleName}\n$mergeOut\nMerging done...\n" if $verbose;
 	my $mergedFile="$outDir/${$entryParameters[$entryCounter]}{SampleName}.extendedFrags.fastq";
@@ -330,8 +331,40 @@ sub CreateBWAIndex #creates indexes for the reference sequences provided and upd
 		my $refIndexPrefix=(split(/\//,$uniqRefSeq))[-1];
 		$refIndexPrefix="$indexDir/$refIndexPrefix";
 		my $indexOut=`bwa index -p $refIndexPrefix -a is $uniqRefSeq 2>&1`; #command for making BWA index
-		print "return code = ", $?, "\n" if $debug;
+		#print "return code = ", $?, "\n" if $debug;
 		if($?) {die "$indexOut\n$!";} #sanity check
 		print "\nPreparing BWA index for $uniqRefSeq\n$indexOut\nIndex Prepared...\n" if $verbose;
 		};
+	}
+
+sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, converts SAM->BAM and sorts BAM file
+	{
+	my $entryCounter=$_[0]; #this record number in the config file will be processed
+	my $readFile=$_[1]; #sequences in this file will be aligned to corresponding reference
+	my $outDir=$_[2]; #output files will be generated here
+	my $alignFile="$outDir/${$entryParameters[$entryCounter]}{SampleName}.sam";
+	my $errFile="$outDir/stderr.log";
+	#bwa mem -t 4 $path/ReferenceIndexes/Barcode-01-ref.fa $path2/3.mergedReads/Barcode-01.extendedFrags.fastq >$path3/4.readAlignment/Barcode-01.sam
+	`bwa mem -t 4 ${$entryParameters[$entryCounter]}{ReferenceSeqFile} $readFile >$alignFile 2>$errFile`; #command for generating alignment
+	#print "return code = ", $?, "\n" if $debug;
+	open(BWAERR,"$errFile") or die $!;
+	my @stderrOut=<BWAERR>; #record STDERR for BWA
+	close(BWAERR);
+	if($?) {die "@stderrOut\n$!";} #sanity check
+	print "\nCreating alignment of reads on amplicon refs using BWA for ${$entryParameters[$entryCounter]}{SampleName}\n@stderrOut\nAlignment finished...\n" if $verbose;
+	
+	###Converting SAM -> BAM###
+	my $alignBamFile=$alignFile;
+	$alignBamFile=~s/\.sam$/.bam/;
+	#print "\nBAM file: $alignBamFile\n" if $debug;
+	#samtools view -bS Barcode-01.sam >Barcode-01.bam
+	`samtools view -bS $alignFile >$alignBamFile 2>$errFile`; #command to convert SAM to BAM
+	print "return code = ", $?, "\n" if $debug;
+	open(BWAERR,"$errFile") or die $!;
+	my @stderrOut=<BWAERR>; #record STDERR for samtools
+	close(BWAERR);
+	if($?) {die "@stderrOut\n$!";} #sanity check
+	print "\nConverting alignment from SAM to BAM for ${$entryParameters[$entryCounter]}{SampleName}\n@stderrOut\nConversion finished...\n" if $verbose;
+	
+	#unlink $errFile;
 	}
