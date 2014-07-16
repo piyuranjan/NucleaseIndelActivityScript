@@ -62,6 +62,9 @@ Usage:\n$0 [options: provide all flags separately]
  -w|workDir	[string] provide path to create all intermediate/result files
 			result files will be created in path/IndelAnalysis.\$timestamp
 			Default: pwd
+ -r|cutRange	[int] InDels in this range (+/-) of the cut site (provided in config)
+			will be calculated
+			Default: 15
  -v|verbose	Print all logging steps (on STDOUT)
  -debug		Turn on Debug mode with multiple logging values. Turn this on only
 			if you are the developer/contributor to the program.
@@ -74,10 +77,12 @@ my ($configFile); #all undef vars
 my $pwd=cwd();
 our ($dataDir,$workDir)=($pwd) x 2; #default for dataDir and workDir
 my ($help,$verbose,$debug)=(0) x 3; #all 0 valued scalars
+my $cutSiteRange=15; #default cut site range (+/-) of the given cut site NT
 #scan all command line options
 if(!GetOptions('c|config=s' => \$configFile,
 				'd|dataDir=s' => \$dataDir,
 				'w|workDir=s' => \$workDir,
+				'r|cutRange=i' => \$cutSiteRange,
 				'v|verbose' => \$verbose,
 				'debug' => \$debug,
 				'h|help' => \$help)
@@ -145,6 +150,11 @@ foreach my $entry(0..$#entryParameters)
 	my $alignDir=$entryDir."/4.readAlignment";
 	mkdir $alignDir or die $!;
 	my $alignFile=CreateBWAAlignment($entry,$mergedFile,$alignDir);
+	
+	##quantify indels in the alignments generated for each amplicon
+	my $indelDir=$entryDir."/indelQuantification";
+	mkdir $indelDir or die $!;
+	ScanIndels($entry,$alignFile,$indelDir,$cutSiteRange);
 	
 	print "\nProcessing for ${$entryParameters[$entry]}{SampleName} finished successfully\n" if($verbose||$debug);
 	print "=" x 50,"\n" if($verbose||$debug);
@@ -339,7 +349,7 @@ sub CreateBWAIndex #creates indexes for the reference sequences provided and upd
 
 sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, converts SAM->BAM and sorts BAM file
 	{
-	###Aligning reads to reference###
+	##Aligning reads to reference
 	my $entryCounter=$_[0]; #this record number in the config file will be processed
 	my $readFile=$_[1]; #sequences in this file will be aligned to corresponding reference
 	my $outDir=$_[2]; #output files will be generated here
@@ -355,7 +365,7 @@ sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, conver
 	if($?) {die "@stderrOut\n$!";} #sanity check
 	print "\nCreating alignment of reads on amplicon refs using BWA for ${$entryParameters[$entryCounter]}{SampleName}\n@stderrOut\nAlignment finished...\n" if $verbose;
 	
-	###Converting SAM -> BAM###
+	##Converting SAM -> BAM
 	my $alignBamFile=$alignFile;
 	$alignBamFile=~s/\.sam$/.bam/;
 	#print "\nBAM file: $alignBamFile\n" if $debug;
@@ -365,18 +375,47 @@ sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, conver
 	if($?) {die "$samtoolsOut\n$!";} #sanity check
 	print "\nConverting alignment from SAM to BAM for ${$entryParameters[$entryCounter]}{SampleName}\n$samtoolsOut\nConversion finished...\n" if $verbose;
 	
-	###Sorting BAM###
+	##Sorting BAM
 	my $alignSortedBamPrefix=$alignBamFile;
 	$alignSortedBamPrefix=~s/\.bam/.Sorted/;
 	#samtools sort Barcode-01.bam Barcode-01.Sorted
-	my $samtoolsOut=`samtools sort $alignBamFile $alignSortedBamPrefix 2>&1`; #command to sort BAM
-	print "return code = ", $?, "\n" if $debug;
-	if($?) {die "$samtoolsOut\n$!";} #sanity check
-	print "\nSorting alignment by chromosomal coordinates in BAM for ${$entryParameters[$entryCounter]}{SampleName}\n$samtoolsOut\nSorting finished...\n" if $verbose;
+	my $bamSortOut=`samtools sort $alignBamFile $alignSortedBamPrefix 2>&1`; #command to sort BAM
+	#print "return code = ", $?, "\n" if $debug;
+	if($?) {die "$bamSortOut\n$!";} #sanity check
+	print "\nSorting alignment by chromosomal coordinates in BAM for ${$entryParameters[$entryCounter]}{SampleName}\n$bamSortOut\nSorting finished...\n" if $verbose;
 	
 	my $alignSortedBamFile=$alignSortedBamPrefix.".bam";
 	if(-f $alignSortedBamFile)
 		{return $alignSortedBamFile;} #return name of the file generated
 	else
 		{die "File not formed: $alignSortedBamFile\nCheck if any error in BWA/Samtools\n";} #integrity check
+	}
+
+sub ScanIndels #scans indels in amplicons using the alignment files
+	{
+	my $entryCounter=$_[0]; #this record number in the config file will be processed
+	my $alignFile=$_[1]; #alignment in this file will be used for indel calculation
+	my $outDir=$_[2]; #output files will be generated here
+	my $cutSiteRange=$_[3]; #indels in this range of the cut site will be calculated
+	
+	##Scan all cut sites
+	my %cutSites;
+	open(SITE,${$entryParameters[$entryCounter]}{AmpliconCutSites}) or die $!;
+	while(<SITE>)
+		{
+		next if(/(#|^$)/); #skip comments/blank lines
+		chomp();
+		my @entry=split(/\t/);
+		$cutSites{$entry[0]}=$entry[1];
+		}
+	close(SITE);
+	
+	##Create index of the alignment file
+	unless(-e $alignFile.'bai')
+		{
+		my $samtoolsOut=`samtools index $alignFile 2>&1`; #command to create index of the alignment
+		#print "return code = ", $?, "\n" if $debug;
+		if($?) {die "$samtoolsOut\n$!";} #sanity check
+		print "\nCreating BAM alignment index for ${$entryParameters[$entryCounter]}{SampleName}\n$samtoolsOut\nIndexing finished...\n" if $verbose;
+		}
 	}
