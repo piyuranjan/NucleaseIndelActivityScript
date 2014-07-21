@@ -383,7 +383,7 @@ sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, conver
 	my $alignFile="$outDir/${$entryParameters[$entryCounter]}{SampleName}.sam";
 	my $errFile="$outDir/stderr.log";
 	print "\nCreating alignment of reads on amplicon refs using BWA for ${$entryParameters[$entryCounter]}{SampleName}...";
-	`bwa mem -t 4 ${$entryParameters[$entryCounter]}{ReferenceSeqFile} $readFile >$alignFile 2>$errFile`; #command for generating alignment
+	`bwa mem -t 4 -M ${$entryParameters[$entryCounter]}{ReferenceSeqFile} $readFile >$alignFile 2>$errFile`; #command for generating alignment
 	#print "return code = ", $?, "\n" if $debug;
 	open(BWAERR,"$errFile") or die $!;
 	my @stderrOut=<BWAERR>; #record STDERR for BWA
@@ -483,7 +483,7 @@ sub ScanIndels #scans indels in amplicons using the alignment files
 			if(/^@/) #skip SAM headers to indels file
 				{print SAMOUT $_;next;}
 			my $cigar=(split(/\t/))[5]; #extract cigar code
-			next if($cigar=~/[HS]/); #skip all split alignments (skip if Hard or Soft clip in CIGAR)
+			next if($cigar=~/[H]/); #skip all split alignments (skip if Hard or Soft clip in CIGAR)
 			$readCount++; my $indelReadFlag=0;
 			if($cigar=~/[DI]/) #look if cigar has Insertions or Deletions
 				{
