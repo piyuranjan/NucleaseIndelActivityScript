@@ -92,9 +92,12 @@ if(!GetOptions('c|config=s' => \$configFile,
 				'debug' => \$debug,
 				'h|help' => \$help)
 				||(!defined $configFile))
-	{Usage; exit 1;}
-if($help) #quit with help
-	{Steps;Usage;exit 0;}
+	{
+	if($help) #quit with help
+		{Steps;Usage;exit 0;}
+	else
+		{Usage; exit 1;}
+	}
 print "\n...Debug mode on...\n" if $debug;
 print "\nTime before beginning: ".GetLoggingTime()."\n" if ($verbose||$debug);
 $dataDir=~s/\/$//; #remove trailing slash if present
