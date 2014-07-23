@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-################################################################################
+###################################################################################
 # Quantitate InDels from Paired End sequenced (Illumina) reads.
 # Steps:
 #	1. Trim reads to exclude the adapters on the other end using Prinseq-Lite
@@ -13,7 +13,7 @@
 # Author: Piyush Ranjan (piyuranjan@gatech.edu)
 # Date created: May 08, 2014
 # Last updated: Check on https://github.com/piyuranjan/NucleaseIndelActivityScript
-################################################################################
+###################################################################################
 
 use strict;
 use warnings;
@@ -30,7 +30,7 @@ use List::Util qw(min max);
 sub Steps
 	{
 	print '
-################################################################################
+###################################################################################
 # Quantitate InDels from Paired End sequenced (Illumina) reads.
 # Steps:
 #	1. Trim reads to exclude the adapters on the other end using Prinseq-Lite
@@ -44,7 +44,7 @@ sub Steps
 # Author: Piyush Ranjan (piyuranjan@gatech.edu)
 # Date created: May 08, 2014
 # Last updated: Check on https://github.com/piyuranjan/NucleaseIndelActivityScript
-################################################################################
+###################################################################################
 	';
 	}
 sub Usage
@@ -103,6 +103,7 @@ print "\nTime before beginning: ".GetLoggingTime()."\n" if ($verbose||$debug);
 $dataDir=~s/\/$//; #remove trailing slash if present
 die "$dataDir: Directory absent / not readable\n$!" unless((-d $dataDir)&&(-r $dataDir));
 $workDir=~s/\/$//; #remove trailing slash if present
+die "$workDir: Directory tree absent / not writeable\n$!" unless((-d $workDir)&&(-w $dataDir));
 $workDir.='/IndelAnalysis.'.GetLoggingTime(); #default for workDir
 
 ###display all configuration options###
@@ -118,7 +119,7 @@ print "\n### Scanning parameters from config file ###\n";
 ScanParametersFromConfig($configFile);
 die "\nError: No valid entries in the config file: $configFile\n$!" if($#entryParameters<0); #record check
 print "Scanning parameters from config file, finished!\n" if $verbose;
-mkdir $workDir or die $!; #creating work directory if all checks passed
+mkdir $workDir or die "\n$workDir: $!"; #creating work directory if all checks passed
 print "\nDirectory created at Level-1: $workDir\n" if $verbose;
 
 ###Create Indexes for BWA###
@@ -181,7 +182,7 @@ foreach my $entry(0..$#entryParameters)
 	print "\n\nProcessing for ${$entryParameters[$entry]}{SampleName} finished successfully!\n";
 	print "=" x 80,"\n";
 	}
-
+print "\nTime at Ending: ".GetLoggingTime()."\n" if ($verbose||$debug);
 
 #####################################
 ######### Subroutines Below #########
