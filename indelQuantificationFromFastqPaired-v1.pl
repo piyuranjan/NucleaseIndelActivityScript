@@ -387,7 +387,7 @@ sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, conver
 	my $alignFile="$outDir/${$entryParameters[$entryCounter]}{SampleName}.sam";
 	my $errFile="$outDir/stderr.log";
 	print "\nCreating alignment of reads on amplicon refs using BWA for ${$entryParameters[$entryCounter]}{SampleName}...";
-	`bwa mem -t 4 -M ${$entryParameters[$entryCounter]}{ReferenceSeqFile} $readFile >$alignFile 2>$errFile`; #command for generating alignment
+	`bwa mem -t 4 ${$entryParameters[$entryCounter]}{ReferenceSeqFile} $readFile >$alignFile 2>$errFile`; #command for generating alignment
 	#print "return code = ", $?, "\n" if $debug;
 	open(BWAERR,"$errFile") or die $!;
 	my @stderrOut=<BWAERR>; #record STDERR for BWA
