@@ -525,7 +525,9 @@ sub ScanIndels #scans indels in amplicons using the alignment files
 		print "done!";
 		##Prepare and print in indel frequency sheet
 		my $matchCount=$readCount-$indelReadCount;
-		my $indelReadPercent=($indelReadCount/$readCount)*100;
+		my $indelReadPercent=0;
+		$indelReadPercent=($indelReadCount/$readCount)*100 if($readCount); #added exception for amplicons not matching any reads to avoid illegal division by 0
+			#{$indelReadPercent=($indelReadCount/$readCount)*100;}
 		print OUT "$amplicon\t$indelCount\t$indelReadCount\t";
 		printf OUT ("%.3f",$indelReadPercent);
 		print OUT "%\t$matchCount\t$readCount\n";
