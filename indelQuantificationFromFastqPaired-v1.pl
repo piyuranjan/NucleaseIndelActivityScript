@@ -245,6 +245,8 @@ sub ScanParametersFromConfig #Scans the configuration file for all the parameter
 			next;
 			}
 		my @paramValues=split(/\t/,$_);
+		foreach my $val(@paramValues) #remove flanking spaces from values
+			{$val=~s/\s+$//;$val=~s/^\s+//;}
 		# foreach my $val(@paramValues)
 			# {print "!$val\n" if $debug;}
 		# print "\n@paramValues\n$#paramValues" if $debug;
@@ -441,6 +443,8 @@ sub ScanIndels #scans indels in amplicons using the alignment files
 		next if(/(#|^$)/); #skip comments/blank lines
 		chomp();
 		my @entry=split(/\t/);
+		foreach my $val(@entry) #remove flanking spaces from values
+			{$val=~s/\s+$//;$val=~s/^\s+//;}
 		$cutSites{$entry[0]}=$entry[1];
 		}
 	close(SITE);
@@ -527,7 +531,6 @@ sub ScanIndels #scans indels in amplicons using the alignment files
 		my $matchCount=$readCount-$indelReadCount;
 		my $indelReadPercent=0;
 		$indelReadPercent=($indelReadCount/$readCount)*100 if($readCount); #added exception for amplicons not matching any reads to avoid illegal division by 0
-			#{$indelReadPercent=($indelReadCount/$readCount)*100;}
 		print OUT "$amplicon\t$indelCount\t$indelReadCount\t";
 		printf OUT ("%.3f",$indelReadPercent);
 		print OUT "%\t$matchCount\t$readCount\n";
