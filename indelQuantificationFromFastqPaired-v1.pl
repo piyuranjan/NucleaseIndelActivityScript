@@ -51,7 +51,7 @@ sub Usage
 	{
 	print "
 Usage:\n$0 [options: provide all flags separately]
-\nPackage requirements (in system PATH variable):\nPrinseq-Lite(prinseq-lite.pl); TrimGalore(trim_galore); FLASH(flash); Burrows-Wheeler Aligner(bwa); Samtools(samtools)
+\nPackage requirements (in system PATH variable):\nPrinseq-Lite(prinseq-lite.pl); TrimGalore(trim_galore); Cutadapt(cutadapt); FLASH(flash); Burrows-Wheeler Aligner(bwa); Samtools(samtools)
 \nOptions:
  -c|config	[string:required] provide config file (with location)
 			(pwd assumed as location if not given)
@@ -75,13 +75,13 @@ Usage:\n$0 [options: provide all flags separately]
 	\n";
 	}
 
-our @entryParameters; #this hash stores all the parameters given in config file
+my @entryParameters; #this hash stores all the parameters given in config file
 my ($configFile); #all undef vars
 my $pwd=cwd();
-our ($dataDir,$workDir)=($pwd) x 2; #default for dataDir and workDir
+my ($dataDir,$workDir)=($pwd) x 2; #default for dataDir and workDir
 my ($help,$verbose,$debug)=(0) x 3; #all 0 valued scalars
 my $cutSiteRange=15; #default cut site range (+/-) of the given cut site NT
-our $threads=1; #default number of threads
+my $threads=1; #default number of threads
 #scan all command line options
 if(!GetOptions('c|config=s' => \$configFile,
 				'd|dataDir=s' => \$dataDir,
@@ -100,6 +100,8 @@ if(!GetOptions('c|config=s' => \$configFile,
 	}
 print "\n...Debug mode on...\n" if $debug;
 print "\nTime before beginning: ".GetLoggingTime()."\n" if ($verbose||$debug);
+###Check all dependency packages###
+CheckPackages();
 $dataDir=~s/\/$//; #remove trailing slash if present
 die "$dataDir: Directory absent / not readable\n$!" unless((-d $dataDir)&&(-r $dataDir));
 $workDir=~s/\/$//; #remove trailing slash if present
@@ -216,6 +218,35 @@ sub ScanSeqFiles #Scan and guess paired end files from a given location
 		$pairedFqFiles{$fqFiles[$i]}=$fqFiles[$i+1];
 		}
 	return \%pairedFqFiles;
+	}
+
+sub CheckPackages #checks for all packages before starting
+	{
+	print "\n### Checking dependencies ###\n" if $verbose;
+	
+	##Check PrinSeq(Lite)
+	`prinseq-lite.pl 1>/dev/null 2>&1`;
+	die "Fatal error: prinseq-lite.pl not installed (or not available in PATH)\n$!" if($?);
+	
+	##Check Cutadapt & TrimGalore
+	`cutadapt -h 1>/dev/null 2>&1`;
+	die "Fatal error: cutadapt not installed (or not available in PATH)\n$!" if($?);
+	`trim_galore -h 1>/dev/null 2>&1`;
+	die "Fatal error: trim_galore not installed (or not available in PATH)\n$!" if($?);
+	
+	##Check FLASH
+	`flash --help 1>/dev/null 2>&1`;
+	die "Fatal error: flash not installed (or not available in PATH)\n$!" if($?);
+	
+	##Check Burrows-Wheeler Aligner (BWA)
+	my $bwa=`bwa 2>&1`;
+	die "Fatal error: bwa not installed (or not available in PATH)\n$!" unless((defined $bwa)&&($bwa=~/Usage\:/));
+
+	##Check Samtools
+	my $samtools=`samtools 2>&1`;
+	die "Fatal error: samtools not installed (or not available in PATH)\n$!" unless((defined $samtools)&&($samtools=~/Usage\:/));
+	
+	print "All packages working fine!\n" if $verbose;
 	}
 
 sub ScanParametersFromConfig #Scans the configuration file for all the parameters and returns a hash with all parameter values
