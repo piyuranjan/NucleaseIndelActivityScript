@@ -20,6 +20,8 @@ use warnings;
 use Getopt::Long;
 use Time::HiRes qw(gettimeofday tv_interval);
 use Cwd;
+use File::Path;
+use File::Copy qw(mv);
 use Sort::Naturally;
 use List::MoreUtils qw(uniq);
 use List::Util qw(min max);
@@ -69,8 +71,9 @@ Usage:\n$0 [options: provide all flags separately]
  -t|threads	[int] Number of cpu threads to use.
 			Force this to 1 if you want to preserve read order.
 			This option only forces FLASH, BWA and Samtools to use multiple threads.
-			Default: Max # processors;
+			Default: Max # processors minus 1;
 					Or 1 if /proc/cpuinfo is not available/readable.
+ -i|remove	Remove folders and data generated during intermediate steps
  -v|verbose	Print all logging steps (on STDOUT).
  -debug		Turn on Debug mode with multiple logging values. Turn this on only
 			if you are the developer/contributor to the program.
@@ -82,7 +85,7 @@ my @entryParameters; #this hash stores all the parameters given in config file
 my ($configFile); #all undef vars
 my $pwd=cwd();
 my ($dataDir,$workDir)=($pwd) x 2; #default for dataDir and workDir
-my ($help,$verbose,$debug)=(0) x 3; #all 0 valued scalars
+my ($help,$removeIntermediate,$verbose,$debug)=(0) x 4; #all 0 valued scalars
 my $cutSiteRange=15; #default cut site range (+/-) of the given cut site NT
 my $threads=CheckProcessors(); #default number of threads (is max # processors default, or 1 if /proc/cpuinfo is not available/readable)
 
@@ -93,6 +96,7 @@ if(!GetOptions('c|config=s' => \$configFile,
 				'w|workDir=s' => \$workDir,
 				'r|cutRange=i' => \$cutSiteRange,
 				't|threads=i' => \$threads,
+				'i|remove' => \$removeIntermediate,
 				'v|verbose' => \$verbose,
 				'debug' => \$debug,
 				'h|help' => \$help)
@@ -104,6 +108,7 @@ if(!GetOptions('c|config=s' => \$configFile,
 		{Usage; exit 1;}
 	}
 print "\n...Debug mode on...\n" if $debug;
+my $beginTime=[gettimeofday];
 print "\nTime before beginning: ".GetLoggingTime()."\n" if($verbose||$debug);
 print "\nUsing number of threads for flash & bwa: $threads\n" if($verbose||$debug);
 ###Check all dependency packages###
@@ -182,10 +187,35 @@ foreach my $entry(0..$#entryParameters)
 	print "\nDirectory created at Level-3: $indelDir\n" if $verbose;
 	ScanIndels($entry,$alignFile,$indelDir,$cutSiteRange,$indelSheet);
 	
+	##removing intermediate files/directories if option provided
+	if($removeIntermediate)
+		{
+		print "\nRemoving intermediate files and directories...\n";
+		#making arrangements to preserve complete alignment
+		my $newAlignDir=$entryDir."/readAlignment";
+		mkdir $newAlignDir or die $!;
+		print "\nDirectory created at Level-3: $newAlignDir\n" if $verbose;
+		#my $newAlignFile=(split(/\//,$alignFile))[-1];
+		my $newAlignFile=$alignFile;
+		$newAlignFile=~s/\/4\.readAlignment/\/readAlignment/;
+		#print "\nalignDir: $newAlignDir\nalignFile: $newAlignFile\n" if $debug;
+		mv("$alignFile","$newAlignFile") or die $!;
+		mv("$alignFile.bai","$newAlignFile.bai") or die $!;
+		#removing all other intermediate directories
+		my $error="";
+		rmtree($trimDir,$qualTrimDir,$mergeDir,$alignDir,{safe=>1,error=>\$error}) or die "$error\n$!";
+		print "$trimDir: removed\n$qualTrimDir: removed\n$mergeDir: removed\n$alignDir: removed\n" if $verbose;
+		print "All intermediate directories/files removed!\n";
+		}
+	
 	print "\n\nProcessing for ${$entryParameters[$entry]}{SampleName} finished successfully!\n";
 	print "=" x 80,"\n";
 	}
+my $endTime=[gettimeofday];
 print "\nTime at Ending: ".GetLoggingTime()."\n" if ($verbose||$debug);
+my $timeTaken = tv_interval($beginTime,$endTime);
+$timeTaken/=60;
+printf "\nTime taken total: %.2f min\n",$timeTaken;
 
 #####################################
 ######### Subroutines Below #########
@@ -204,7 +234,10 @@ sub CheckProcessors #find and return number of processors/threads available
 	my $command="grep -c -Pe \'^processor\\s+\:\\s+\' $cpuInfo";
 	my $threads=1; #default number of threads is 1
 	if((-e $cpuInfo)&&(-r $cpuInfo))
-		{$threads=`$command`;}
+		{
+		$threads=`$command`;
+		$threads-- if($threads>1); #set max processors to use= max avail - 1, if more than 1 cores present
+		}
 	else
 		{print "\nCannot read max # processors in $cpuInfo\n" if $verbose;}
 	return($threads);
@@ -364,6 +397,7 @@ sub MergePairedReads #merges read pairs in to a single read using FLASH
 	my $outDir=$_[3]; #output files will be generated here
 	my $minOverlapToMerge=30; #this sets the min NT overlap to be matched for successful merging
 	print "\nMerging paired reads using FLASH with min overlap of $minOverlapToMerge NT for: ${$entryParameters[$entryCounter]}{SampleName}...";
+	#print "\nthreads:$threads\tminOverlapToMerge:$minOverlapToMerge\n" if $debug;
 	my $mergeOut=`flash -t $threads -m $minOverlapToMerge -o ${$entryParameters[$entryCounter]}{SampleName} -d $outDir $forFile $revFile 2>&1`; #command for merging read pairs
 	#print "return code = ", $?, "\n" if $debug;
 	if($?) {die "$mergeOut\n$!";} #sanity check

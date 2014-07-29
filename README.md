@@ -10,6 +10,7 @@ Automation for the quantification of indels arising due to nuclease activity
 
 v1.0.1:
 *Added multi-threading support in BWA, FLASH and Samtools
+*Added option to remove intermediate files/folders (will only generate alignments and indels)
 
 v1:
 *Added help function for identifying dependency installations.
