@@ -53,25 +53,28 @@ sub Usage
 Usage:\n$0 [options: provide all flags separately]
 \nPackage requirements (in system PATH variable):\nPrinseq-Lite(prinseq-lite.pl); TrimGalore(trim_galore); Cutadapt(cutadapt); FLASH(flash); Burrows-Wheeler Aligner(bwa); Samtools(samtools)
 \nOptions:
- -c|config	[string:required] provide config file (with location)
+ -c|config	[string:required] provide config file (with location).
 			(pwd assumed as location if not given)
  -d|dataDir	[string] provide directory path which contains paired-end Read files,
 			Reference sequence file(s) and tab-delimited Amplicon cut-site files.
 			Program will find the filenames specified in the config, in the
 			complete directory tree under given path.
 			Default: pwd
- -w|workDir	[string] provide path to create all intermediate/result files
-			result files will be created in path/IndelAnalysis.\$timestamp
+ -w|workDir	[string] provide path to create all intermediate/result files.
+			Result files will be created in path/IndelAnalysis.\$timestamp
 			Default: pwd
  -r|cutRange	[int] InDels in this range (+/-) of the cut site (provided in config)
-			will be calculated
+			will be calculated.
 			Default: 15
- -t|threads	[int] Number of cpu threads to use
-			Default: 1
- -v|verbose	Print all logging steps (on STDOUT)
+ -t|threads	[int] Number of cpu threads to use.
+			Force this to 1 if you want to preserve read order.
+			This option only forces FLASH, BWA and Samtools to use multiple threads.
+			Default: Max # processors;
+					Or 1 if /proc/cpuinfo is not available/readable.
+ -v|verbose	Print all logging steps (on STDOUT).
  -debug		Turn on Debug mode with multiple logging values. Turn this on only
 			if you are the developer/contributor to the program.
- -h|help	Print detailed help with steps involved
+ -h|help	Print detailed help with steps involved.
 	\n";
 	}
 
@@ -81,7 +84,9 @@ my $pwd=cwd();
 my ($dataDir,$workDir)=($pwd) x 2; #default for dataDir and workDir
 my ($help,$verbose,$debug)=(0) x 3; #all 0 valued scalars
 my $cutSiteRange=15; #default cut site range (+/-) of the given cut site NT
-my $threads=1; #default number of threads
+my $threads=CheckProcessors(); #default number of threads (is max # processors default, or 1 if /proc/cpuinfo is not available/readable)
+
+
 #scan all command line options
 if(!GetOptions('c|config=s' => \$configFile,
 				'd|dataDir=s' => \$dataDir,
@@ -99,7 +104,8 @@ if(!GetOptions('c|config=s' => \$configFile,
 		{Usage; exit 1;}
 	}
 print "\n...Debug mode on...\n" if $debug;
-print "\nTime before beginning: ".GetLoggingTime()."\n" if ($verbose||$debug);
+print "\nTime before beginning: ".GetLoggingTime()."\n" if($verbose||$debug);
+print "\nUsing number of threads for flash & bwa: $threads\n" if($verbose||$debug);
 ###Check all dependency packages###
 CheckPackages();
 $dataDir=~s/\/$//; #remove trailing slash if present
@@ -110,11 +116,6 @@ $workDir.='/IndelAnalysis.'.GetLoggingTime(); #default for workDir
 
 ###display all configuration options###
 
-
-##Deprecated: Scan fastq files on a location
-# my %pairedFqFiles=%{ScanSeqFiles($dataDir)};
-# foreach my $key(nsort keys %pairedFqFiles)
-	# {print "$key\t$pairedFqFiles{$key}\n" if $debug;}
 
 ###Scan all parameters from the configuration file###
 print "\n### Scanning parameters from config file ###\n";
@@ -197,27 +198,16 @@ sub GetLoggingTime #find and return current logging timestamp
 	return $niceTimestamp;
 	}
 
-## ScanSeqFiles deprecated now
-sub ScanSeqFiles #Scan and guess paired end files from a given location
+sub CheckProcessors #find and return number of processors/threads available
 	{
-	my $dataDir=$_[0]; #record path for data files
-	my %pairedFqFiles; #will record key->value as pair1File->pair2File
-	opendir(DIR,$dataDir) or die $!;
-	my @seqFiles=nsort(readdir(DIR)); #sorted aphanumerically
-	closedir(DIR);
-	my @fqFiles;
-	foreach my $seqFile(@seqFiles)
-		{
-		next unless(-f "$dataDir/$seqFile"); #skip any directory/hidden files
-		next unless($seqFile=~/\.f(ast)?q$/i); #skip files not with extension fastq/fq
-		#print $seqFile."\n" if $debug;
-		push(@fqFiles,$seqFile);
-		}
-	for(my $i=0;$i<=$#fqFiles;$i+=2)
-		{
-		$pairedFqFiles{$fqFiles[$i]}=$fqFiles[$i+1];
-		}
-	return \%pairedFqFiles;
+	my $cpuInfo='/proc/cpuinfo';
+	my $command="grep -c -Pe \'^processor\\s+\:\\s+\' $cpuInfo";
+	my $threads=1; #default number of threads is 1
+	if((-e $cpuInfo)&&(-r $cpuInfo))
+		{$threads=`$command`;}
+	else
+		{print "\nCannot read max # processors in $cpuInfo\n" if $verbose;}
+	return($threads);
 	}
 
 sub CheckPackages #checks for all packages before starting
@@ -374,7 +364,7 @@ sub MergePairedReads #merges read pairs in to a single read using FLASH
 	my $outDir=$_[3]; #output files will be generated here
 	my $minOverlapToMerge=30; #this sets the min NT overlap to be matched for successful merging
 	print "\nMerging paired reads using FLASH with min overlap of $minOverlapToMerge NT for: ${$entryParameters[$entryCounter]}{SampleName}...";
-	my $mergeOut=`flash -m $minOverlapToMerge -o ${$entryParameters[$entryCounter]}{SampleName} -d $outDir $forFile $revFile 2>&1`; #command for merging read pairs
+	my $mergeOut=`flash -t $threads -m $minOverlapToMerge -o ${$entryParameters[$entryCounter]}{SampleName} -d $outDir $forFile $revFile 2>&1`; #command for merging read pairs
 	#print "return code = ", $?, "\n" if $debug;
 	if($?) {die "$mergeOut\n$!";} #sanity check
 	print "\n$mergeOut" if $verbose;
@@ -420,7 +410,7 @@ sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, conver
 	my $alignFile="$outDir/${$entryParameters[$entryCounter]}{SampleName}.sam";
 	my $errFile="$outDir/stderr.log";
 	print "\nCreating alignment of reads on amplicon refs using BWA for ${$entryParameters[$entryCounter]}{SampleName}...";
-	`bwa mem -t 4 ${$entryParameters[$entryCounter]}{ReferenceSeqFile} $readFile >$alignFile 2>$errFile`; #command for generating alignment
+	`bwa mem -t $threads ${$entryParameters[$entryCounter]}{ReferenceSeqFile} $readFile >$alignFile 2>$errFile`; #command for generating alignment
 	#print "return code = ", $?, "\n" if $debug;
 	open(BWAERR,"$errFile") or die $!;
 	my @stderrOut=<BWAERR>; #record STDERR for BWA
@@ -435,7 +425,7 @@ sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, conver
 	$alignBamFile=~s/\.sam$/.bam/;
 	#print "\nBAM file: $alignBamFile\n" if $debug;
 	print "\nConverting alignment from SAM to BAM for ${$entryParameters[$entryCounter]}{SampleName}...";
-	my $samtoolsOut=`samtools view -bSh -o $alignBamFile $alignFile 2>&1`; #command to convert SAM to BAM
+	my $samtoolsOut=`samtools view -bSh -@ $threads -o $alignBamFile $alignFile 2>&1`; #command to convert SAM to BAM
 	#print "return code = ", $?, "\n" if $debug;
 	if($?) {die "$samtoolsOut\n$!";} #sanity check
 	print "\n$samtoolsOut" if $verbose;
@@ -445,7 +435,7 @@ sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, conver
 	my $alignSortedBamPrefix=$alignBamFile;
 	$alignSortedBamPrefix=~s/\.bam/.Sorted/;
 	print "\nSorting alignment by chromosomal coordinates in BAM for ${$entryParameters[$entryCounter]}{SampleName}...";
-	my $bamSortOut=`samtools sort $alignBamFile $alignSortedBamPrefix 2>&1`; #command to sort BAM
+	my $bamSortOut=`samtools sort -@ $threads $alignBamFile $alignSortedBamPrefix 2>&1`; #command to sort BAM
 	#print "return code = ", $?, "\n" if $debug;
 	if($?) {die "$bamSortOut\n$!";} #sanity check
 	print "\n$bamSortOut" if $verbose;
