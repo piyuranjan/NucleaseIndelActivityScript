@@ -459,7 +459,7 @@ sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, conver
 	$alignBamFile=~s/\.sam$/.bam/;
 	#print "\nBAM file: $alignBamFile\n" if $debug;
 	print "\nConverting alignment from SAM to BAM for ${$entryParameters[$entryCounter]}{SampleName}...";
-	my $samtoolsOut=`samtools view -bSh -@ $threads -o $alignBamFile $alignFile 2>&1`; #command to convert SAM to BAM
+	my $samtoolsOut=`samtools view -bh -@ $threads -o $alignBamFile $alignFile 2>&1`; #command to convert SAM to BAM
 	#print "return code = ", $?, "\n" if $debug;
 	if($?) {die "$samtoolsOut\n$!";} #sanity check
 	print "\n$samtoolsOut" if $verbose;
@@ -467,15 +467,16 @@ sub CreateBWAAlignment #creates alignment of reads to amplicon sequences, conver
 	
 	##Sorting BAM
 	my $alignSortedBamPrefix=$alignBamFile;
-	$alignSortedBamPrefix=~s/\.bam/.Sorted/;
+	$alignSortedBamPrefix=~s/\.bam/.Sorted.bam/;
 	print "\nSorting alignment by chromosomal coordinates in BAM for ${$entryParameters[$entryCounter]}{SampleName}...";
-	my $bamSortOut=`samtools sort -@ $threads $alignBamFile $alignSortedBamPrefix 2>&1`; #command to sort BAM
+	my $bamSortOut=`samtools sort -@ $threads -o $alignSortedBamPrefix $alignBamFile 2>&1`; #command to sort BAM
 	#print "return code = ", $?, "\n" if $debug;
 	if($?) {die "$bamSortOut\n$!";} #sanity check
 	print "\n$bamSortOut" if $verbose;
 	print "\nSorting finished!\n";
 	
-	my $alignSortedBamFile=$alignSortedBamPrefix.".bam";
+	#my $alignSortedBamFile=$alignSortedBamPrefix.".bam";
+	my $alignSortedBamFile=$alignSortedBamPrefix;
 	if(-f $alignSortedBamFile)
 		{return $alignSortedBamFile;} #return name of the file generated
 	else
